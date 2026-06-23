@@ -11,6 +11,7 @@ Esta aplicación Streamlit permite crear y gestionar informes operativos de mane
 - Exportación a formato DOCX y PDF
 - Niveles de clasificación del informe
 - Guardar y cargar informes en formato JSON
+- Coordenadas por evento con selector en mapa (enlace en el informe)
 - Interfaz con tema corporativo, panel lateral y pestañas
 
 ## 🛠️ Instalación

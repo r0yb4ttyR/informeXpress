@@ -4,6 +4,7 @@ from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from io import BytesIO
 from datetime import datetime, date
 import json
@@ -63,6 +64,32 @@ def _apply_table_style(table, *names):
             return
         except KeyError:
             continue
+
+
+def maps_url(lat, lon):
+    """Devuelve una URL de mapa para unas coordenadas (solo texto, sin llamadas externas)."""
+    return f"https://www.google.com/maps?q={lat},{lon}"
+
+
+def _add_hyperlink(paragraph, url, text, color="1F4E79"):
+    """Inserta un hiperenlace externo (subrayado) en un párrafo DOCX."""
+    r_id = paragraph.part.relate_to(url, RT.HYPERLINK, is_external=True)
+    hyperlink = OxmlElement('w:hyperlink')
+    hyperlink.set(qn('r:id'), r_id)
+    run = OxmlElement('w:r')
+    rPr = OxmlElement('w:rPr')
+    color_el = OxmlElement('w:color')
+    color_el.set(qn('w:val'), color)
+    rPr.append(color_el)
+    u = OxmlElement('w:u')
+    u.set(qn('w:val'), 'single')
+    rPr.append(u)
+    run.append(rPr)
+    t = OxmlElement('w:t')
+    t.text = text
+    run.append(t)
+    hyperlink.append(run)
+    paragraph._p.append(hyperlink)
 
 
 def build_docx(nombre_ao, fecha_operacion, zona, clasificacion,
@@ -141,6 +168,11 @@ def build_docx(nombre_ao, fecha_operacion, zona, clasificacion,
             celdas = tabla.add_row().cells
             celdas[0].text = hora_txt
             celdas[1].text = evento.get('descripcion') or ""
+            if evento.get('lat') is not None and evento.get('lon') is not None:
+                par_loc = celdas[1].add_paragraph()
+                par_loc.add_run("📍 ")
+                _add_hyperlink(par_loc, maps_url(evento['lat'], evento['lon']),
+                               f"{evento['lat']:.5f}, {evento['lon']:.5f}")
             if evento.get('imagen'):
                 par_img = celdas[1].add_paragraph()
                 par_img.add_run().add_picture(BytesIO(evento['imagen']), width=Inches(2.8))
@@ -251,6 +283,14 @@ def build_pdf(nombre_ao, fecha_operacion, zona, clasificacion,
             pdf.set_font("Helvetica", "", 11)
             pdf.multi_cell(0, 6, _latin1(evento.get('descripcion') or ""),
                            new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            if evento.get('lat') is not None and evento.get('lon') is not None:
+                pdf.set_text_color(31, 78, 121)
+                pdf.set_font("Helvetica", "U", 10)
+                pdf.cell(0, 5, _latin1(f"Ubicación: {evento['lat']:.5f}, {evento['lon']:.5f}"),
+                         link=maps_url(evento['lat'], evento['lon']),
+                         new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.set_font("Helvetica", "", 11)
+                pdf.set_text_color(0, 0, 0)
             if evento.get('imagen'):
                 if pdf.get_y() > pdf.h - 60:
                     pdf.add_page()
@@ -294,7 +334,7 @@ def badge_html(clasificacion):
 
 
 def build_wa_summary(nombre_ao, fecha_operacion, zona, observaciones, eventos,
-                     interacciones, max_obs=300, max_desc=120, max_items=10):
+                     interacciones, max_obs=5000, max_desc=5000, max_items=40):
     """Genera un resumen de texto compacto para compartir por WhatsApp."""
     lines = [
         f"AO: {nombre_ao}",
@@ -313,7 +353,10 @@ def build_wa_summary(nombre_ao, fecha_operacion, zona, observaciones, eventos,
             desc = (e.get('descripcion') or "").strip()
             if len(desc) > max_desc:
                 desc = desc[:max_desc].rsplit(' ', 1)[0] + "..."
-            lines.append(f"{hora_text} - {desc}")
+            linea = f"{hora_text} - {desc}"
+            if e.get('lat') is not None and e.get('lon') is not None:
+                linea += f" 📍 {e['lat']:.5f},{e['lon']:.5f}"
+            lines.append(linea)
         if len(eventos) > max_items:
             lines.append(f"...(+{len(eventos) - max_items} más)")
     if interacciones:
@@ -331,6 +374,8 @@ def serialize_report():
         eventos_ser.append({
             'hora': e['hora'].strftime('%H:%M') if e.get('hora') else None,
             'descripcion': e.get('descripcion', ''),
+            'lat': e.get('lat'),
+            'lon': e.get('lon'),
             'imagen_b64': base64.b64encode(e['imagen']).decode('ascii') if e.get('imagen') else None,
         })
     fecha = st.session_state.get('fecha_operacion')
@@ -388,7 +433,15 @@ def cargar_callback():
                 imagen = base64.b64decode(e['imagen_b64'])
             except Exception:
                 imagen = None
-        eventos.append({'hora': hora, 'descripcion': e.get('descripcion', ''), 'imagen': imagen})
+        lat = e.get('lat')
+        lon = e.get('lon')
+        try:
+            lat = float(lat) if lat is not None else None
+            lon = float(lon) if lon is not None else None
+        except (TypeError, ValueError):
+            lat = lon = None
+        eventos.append({'hora': hora, 'descripcion': e.get('descripcion', ''),
+                        'lat': lat, 'lon': lon, 'imagen': imagen})
     st.session_state.eventos = eventos
     st.session_state.pop('editing_idx', None)
     st.session_state.load_msg = ("success", f"Informe cargado · {len(eventos)} evento(s).")
@@ -408,6 +461,10 @@ st.session_state.setdefault('fecha_operacion', datetime.now().date())
 st.session_state.setdefault('docx_bytes', None)
 st.session_state.setdefault('pdf_bytes', None)
 st.session_state.setdefault('wa_summary', "")
+st.session_state.setdefault('usar_ubicacion', False)
+st.session_state.setdefault('lat_in', 0.0)
+st.session_state.setdefault('lon_in', 0.0)
+st.session_state.setdefault('map_pick_prev', None)
 
 # Pequeños ajustes de estilo
 st.markdown(
@@ -451,6 +508,8 @@ with st.sidebar:
 st.session_state.eventos.sort(key=hora_key)
 n_eventos = len(st.session_state.eventos)
 n_imagenes = sum(1 for e in st.session_state.eventos if e.get('imagen'))
+n_geo = sum(1 for e in st.session_state.eventos
+            if e.get('lat') is not None and e.get('lon') is not None)
 horas = [e['hora'] for e in st.session_state.eventos if e.get('hora')]
 franja = f"{min(horas).strftime('%H:%M')} – {max(horas).strftime('%H:%M')}" if horas else "—"
 
@@ -464,10 +523,11 @@ with col_titulo:
 with col_badge:
     st.markdown(badge_html(clasificacion), unsafe_allow_html=True)
 
-m1, m2, m3 = st.columns(3)
+m1, m2, m3, m4 = st.columns(4)
 m1.metric("Eventos", n_eventos)
 m2.metric("Con imagen", n_imagenes)
-m3.metric("Franja horaria", franja)
+m3.metric("Geolocalizados", n_geo)
+m4.metric("Franja horaria", franja)
 
 st.divider()
 
@@ -504,6 +564,40 @@ with tab_crono:
             key=f"uploader_{st.session_state.upload_key}",
         )
 
+        st.checkbox("📍 Añadir ubicación", key="usar_ubicacion")
+        if st.session_state.usar_ubicacion:
+            try:
+                import folium
+                from streamlit_folium import st_folium
+
+                lat0 = st.session_state.lat_in or 40.4168
+                lon0 = st.session_state.lon_in or -3.7038
+                fmapa = folium.Map(location=[lat0, lon0], zoom_start=6)
+                if st.session_state.lat_in or st.session_state.lon_in:
+                    folium.Marker([st.session_state.lat_in, st.session_state.lon_in]).add_to(fmapa)
+                ret_map = st_folium(
+                    fmapa, height=300,
+                    key=f"map_pick_{st.session_state.upload_key}",
+                    returned_objects=["last_clicked"],
+                )
+                if ret_map and ret_map.get("last_clicked"):
+                    punto = (round(ret_map["last_clicked"]["lat"], 6),
+                             round(ret_map["last_clicked"]["lng"], 6))
+                    if punto != st.session_state.get("map_pick_prev"):
+                        st.session_state.map_pick_prev = punto
+                        st.session_state.lat_in = punto[0]
+                        st.session_state.lon_in = punto[1]
+                        st.rerun()
+                st.caption("Haz clic en el mapa para fijar el punto, o ajusta los valores abajo.")
+            except ImportError:
+                st.info("Para seleccionar en un mapa instala: pip install streamlit-folium. "
+                        "Puedes introducir las coordenadas manualmente.")
+            col_lat, col_lon = st.columns(2)
+            with col_lat:
+                st.number_input("Latitud", key="lat_in", format="%.6f", step=0.0001)
+            with col_lon:
+                st.number_input("Longitud", key="lon_in", format="%.6f", step=0.0001)
+
         def add_event_callback():
             try:
                 h = datetime.strptime(st.session_state.hora_str, "%H:%M").time()
@@ -515,14 +609,26 @@ with tab_crono:
             imagen_widget = st.session_state.get(uploader_key)
             imagen_bytes = imagen_widget.getvalue() if imagen_widget else None
 
+            if st.session_state.get('usar_ubicacion'):
+                lat_val = st.session_state.get('lat_in')
+                lon_val = st.session_state.get('lon_in')
+            else:
+                lat_val = lon_val = None
+
             st.session_state.eventos.append({
                 'hora': h,
                 'descripcion': st.session_state.descripcion,
+                'lat': lat_val,
+                'lon': lon_val,
                 'imagen': imagen_bytes,
             })
             st.session_state.upload_key += 1
             st.session_state.hora_str = "00:00"
             st.session_state.descripcion = ""
+            st.session_state.usar_ubicacion = False
+            st.session_state.lat_in = 0.0
+            st.session_state.lon_in = 0.0
+            st.session_state.map_pick_prev = None
             st.session_state.add_error = ""
             st.session_state.add_success = "Evento añadido correctamente"
 
@@ -540,6 +646,11 @@ with tab_crono:
                 st.write(f"**{hora_display}**")
             with col2:
                 st.write(evento['descripcion'])
+                if evento.get('lat') is not None and evento.get('lon') is not None:
+                    st.markdown(
+                        f"📍 [{evento['lat']:.5f}, {evento['lon']:.5f}]"
+                        f"({maps_url(evento['lat'], evento['lon'])})"
+                    )
                 if evento['imagen']:
                     st.image(evento['imagen'], width=300)
             with col3:
@@ -568,6 +679,24 @@ with tab_crono:
                         key=f"img_edit_{idx}",
                     )
 
+                    lat_e = lon_e = None
+                    tiene_loc = st.checkbox(
+                        "📍 Ubicación", value=evento.get('lat') is not None,
+                        key=f"loc_chk_{idx}",
+                    )
+                    if tiene_loc:
+                        cl1, cl2 = st.columns(2)
+                        with cl1:
+                            lat_e = st.number_input(
+                                "Latitud", value=float(evento.get('lat') or 0.0),
+                                format="%.6f", step=0.0001, key=f"lat_edit_{idx}",
+                            )
+                        with cl2:
+                            lon_e = st.number_input(
+                                "Longitud", value=float(evento.get('lon') or 0.0),
+                                format="%.6f", step=0.0001, key=f"lon_edit_{idx}",
+                            )
+
                     col_g, col_c = st.columns([1, 3])
                     with col_g:
                         if st.button("💾 Guardar", key=f"save_{idx}"):
@@ -575,6 +704,8 @@ with tab_crono:
                                 nueva_hora = datetime.strptime(hora_edit, "%H:%M").time()
                                 st.session_state.eventos[idx]['hora'] = nueva_hora
                                 st.session_state.eventos[idx]['descripcion'] = desc_edit
+                                st.session_state.eventos[idx]['lat'] = lat_e if tiene_loc else None
+                                st.session_state.eventos[idx]['lon'] = lon_e if tiene_loc else None
                                 if imagen_edit:
                                     st.session_state.eventos[idx]['imagen'] = imagen_edit.getvalue()
                                 del st.session_state.editing_idx
@@ -585,6 +716,16 @@ with tab_crono:
                         if st.button("❌ Cancelar", key=f"cancel_{idx}"):
                             del st.session_state.editing_idx
                             st.rerun()
+
+        geo = [
+            {"lat": e['lat'], "lon": e['lon']}
+            for e in st.session_state.eventos
+            if e.get('lat') is not None and e.get('lon') is not None
+        ]
+        if geo:
+            import pandas as pd
+            st.markdown("**🗺️ Mapa de situación**")
+            st.map(pd.DataFrame(geo))
 
         if st.button("🧹 Limpiar cronología"):
             st.session_state.eventos = []

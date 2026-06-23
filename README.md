@@ -8,14 +8,16 @@ Esta aplicación Streamlit permite crear y gestionar informes operativos de mane
 - Timeline interactivo con soporte para imágenes
 - Gestión de observaciones clave
 - Registro de interacciones
-- Exportación a formato DOCX
-- Interfaz intuitiva y responsive
+- Exportación a formato DOCX y PDF
+- Niveles de clasificación del informe
+- Guardar y cargar informes en formato JSON
+- Interfaz con tema corporativo, panel lateral y pestañas
 
 ## 🛠️ Instalación
 
 1. Clona el repositorio:
 ```bash
-git clone <url-del-repositorio>
+git clone https://github.com/elp0t4s-prog/informeXpress
 cd STREAMLIT_AO
 ```
 
@@ -64,9 +66,10 @@ streamlit run streamlit_ao.py
 - Formato libre para detalles específicos
 
 ### Exportación
-- Generación de documentos DOCX
-- Inclusión automática de imágenes
-- Formato profesional y consistente
+- Generación de documentos DOCX y PDF
+- Portada con metadatos y banner de clasificación
+- Cronología estructurada con imágenes (tabla en DOCX)
+- Numeración de páginas en el pie
 - Nombre de archivo personalizado con fecha
 
 ## 🤝 Contribuir

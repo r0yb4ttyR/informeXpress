@@ -141,7 +141,11 @@ def build_docx(nombre_ao, fecha_operacion, zona, clasificacion,
         celdas[1].text = str(valor)
         for par in celdas[0].paragraphs:
             for r in par.runs:
-                r.bold = True
+                    r.bold = True
+                    try:
+                        r.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
+                    except Exception:
+                        pass
         _set_cell_shading(celdas[0], "F2F2F2")
 
     doc.add_paragraph()

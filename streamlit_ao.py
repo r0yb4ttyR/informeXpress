@@ -539,6 +539,7 @@ tab_obs, tab_crono, tab_inter, tab_export = st.tabs(
     ["📋 Observaciones", "⏱️ Cronología", "👥 Interacciones", "📤 Exportar"]
 )
 
+
 # ---------- Observaciones ----------
 with tab_obs:
     observaciones = st.text_area(
@@ -547,6 +548,12 @@ with tab_obs:
         height=220,
         placeholder="Describe las observaciones clave de la operación...",
     )
+
+    # Aquí mismo, justo debajo
+    if st.button("💾 Guardar", key="btn_guardar_obs"):
+        st.session_state["observaciones_guardadas"] = observaciones
+        st.success("Observaciones guardadas correctamente")
+
 
 # ---------- Cronología ----------
 with tab_crono:
@@ -746,6 +753,12 @@ with tab_inter:
         height=220,
         placeholder="Describe las interacciones relevantes...",
     )
+
+    # Aquí mismo, botón de guardar justo debajo
+    if st.button("💾 Guardar", key="btn_guardar_inter"):
+        st.session_state["interacciones_guardadas"] = interacciones
+        st.success("Interacciones guardadas correctamente")
+
 
 # ---------- Exportar ----------
 with tab_export:

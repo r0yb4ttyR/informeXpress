@@ -8,5 +8,6 @@ numpy==1.26.4
 pandas==2.2.2
 pillow==10.2.0
 pyarrow==14.0.2
-lxml==4.9.3
+lxml==6.1.1
+
 
